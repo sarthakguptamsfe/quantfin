@@ -1,2 +1,9 @@
 streamlit
 pandas
+numpy
+requests
+plotly
+scipy
+py_vollib
+python-dateutil
+
