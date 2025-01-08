@@ -81,7 +81,8 @@ def fetch_benchmark_data(benchmark, start_date, end_date):
     ticker = benchmarks.get(benchmark)
     if not ticker:
         return None, f"Benchmark '{benchmark}' not supported."
-    return fetch_stock_data(ticker, start_date, end_date)
+    return fetch_stock_data(ticker, start_date, end_date)  
+
 
 # Backtest portfolio
 def backtest_portfolio(stocks, weights, initial_capital, start_date, end_date):
@@ -145,20 +146,39 @@ def calculate_metrics(df, initial_capital):
         'Maximum Drawdown': max_drawdown
     }
 
-# Streamlit App
+
+###############################################################################
+#                          PERFORMANCE SUMMARY EXTENSIONS
+###############################################################################
+def calculate_additional_metrics(df):
+    """Calculate additional metrics for performance summary."""
+    best_year = df.resample('Y')['DailyReturn'].sum().max()
+    worst_year = df.resample('Y')['DailyReturn'].sum().min()
+    sortino_ratio = df['DailyReturn'].mean() / df[df['DailyReturn'] < 0]['DailyReturn'].std()
+    benchmark_correlation = df['DailyReturn'].corr(df['BenchmarkReturn'])
+
+    return {
+        'Best Year': best_year,
+        'Worst Year': worst_year,
+        'Sortino Ratio': sortino_ratio,
+        'Benchmark Correlation': benchmark_correlation
+         }
+
+###############################################################################
+#                           ENHANCED MAIN FUNCTION
+###############################################################################
 def main():
-    st.title("Portfolio Backtesting with Benchmark Comparison")
+    st.title("Enhanced Portfolio Backtesting Results")
 
     # User Inputs
     initial_capital = st.number_input("Initial Capital (USD):", min_value=0.0, value=100000.0, step=1000.0)
     num_stocks = st.slider("Number of Stocks (1–10):", 1, 10, 1)
-    stocks = []
-    weights = []
+    stocks, weights = [], []
 
     for i in range(num_stocks):
         cols = st.columns(2)
         with cols[0]:
-            ticker = st.text_input(f"Stock Ticker {i+1}:", key=f"ticker_{i}")
+            ticker = st.text_input(f"Stock Ticker {i + 1}:", key=f"ticker_{i}")
         with cols[1]:
             weight = st.number_input(f"Weight for {ticker or 'Stock'} (%):", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"weight_{i}")
         stocks.append(ticker)
@@ -167,7 +187,6 @@ def main():
     total_weight = sum(weights)
     st.write(f"**Total Weight:** {total_weight:.2f}%")
 
-    # Select Benchmark
     benchmark = st.selectbox("Select Benchmark:", ["S&P 500", "NASDAQ 100", "Russell 2000"])
     colA, colB = st.columns(2)
     with colA:
@@ -175,7 +194,6 @@ def main():
     with colB:
         end_date = st.date_input("End Date:", value=pd.to_datetime("2025-01-01"))
 
-    # Run Backtest
     if st.button("Run Backtest"):
         if abs(total_weight - 100) > 1e-9:
             st.error("Total weights must sum to 100%.")
@@ -187,13 +205,11 @@ def main():
             st.error(err)
             return
 
-        # Fetch Benchmark Data
         benchmark_prices, err = fetch_benchmark_data(benchmark, start_date, end_date)
         if err:
             st.error(err)
             return
 
-        # Align benchmark data
         benchmark_prices = benchmark_prices.loc[portfolio.index]
         benchmark_df = pd.DataFrame({
             "BenchmarkValue": initial_capital * (benchmark_prices / benchmark_prices.iloc[0])
@@ -203,21 +219,38 @@ def main():
         rolling_max_benchmark = benchmark_df['BenchmarkValue'].cummax()
         benchmark_df['Drawdown'] = (benchmark_df['BenchmarkValue'] - rolling_max_benchmark) / rolling_max_benchmark
 
-        # Calculate Metrics
-        try:
-            portfolio_metrics = calculate_metrics(portfolio, initial_capital)
-            benchmark_metrics = calculate_metrics(benchmark_df, initial_capital)
-        except Exception as e:
-            st.error(f"Error calculating metrics: {e}")
-            return
+        portfolio['BenchmarkReturn'] = benchmark_df['DailyReturn']
 
-        # Display Metrics
+        # Save results in session state
+        st.session_state['portfolio'] = portfolio
+        st.session_state['benchmark_df'] = benchmark_df
+
+    # Retrieve data from session state
+    if 'portfolio' in st.session_state and 'benchmark_df' in st.session_state:
+        portfolio = st.session_state['portfolio']
+        benchmark_df = st.session_state['benchmark_df']
+
+        # Calculate Metrics
+        portfolio_metrics = calculate_metrics(portfolio, initial_capital)
+        benchmark_metrics = calculate_metrics(benchmark_df, initial_capital)
+        additional_metrics = calculate_additional_metrics(portfolio)
+
+        # Display Allocation Pie Chart
+        st.subheader("Portfolio Allocation")
+        allocation_df = pd.DataFrame({
+            "Ticker": stocks,
+            "Weight (%)": weights
+        })
+        st.table(allocation_df)
+        fig_pie = px.pie(allocation_df, values="Weight (%)", names="Ticker", title="Portfolio Allocation")
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+        # Display Performance Summary
         st.subheader("Performance Summary")
         summary_df = pd.DataFrame({
             "Metric": [
-                "Start Balance", "End Balance", "Total Return",
-                "Annualized Return (CAGR)", "Annualized Volatility",
-                "Sharpe Ratio", "Maximum Drawdown"
+                "Start Balance", "End Balance", "Total Return", "Annualized Return (CAGR)", "Annualized Volatility",
+                "Sharpe Ratio", "Maximum Drawdown", "Best Year", "Worst Year", "Sortino Ratio", "Benchmark Correlation"
             ],
             "Portfolio": [
                 f"${portfolio_metrics['Start Balance']:,.2f}",
@@ -226,7 +259,11 @@ def main():
                 f"{portfolio_metrics['Annualized Return']:.2%}",
                 f"{portfolio_metrics['Annualized Volatility']:.2%}",
                 f"{portfolio_metrics['Sharpe Ratio']:.2f}",
-                f"{portfolio_metrics['Maximum Drawdown']:.2%}"
+                f"{portfolio_metrics['Maximum Drawdown']:.2%}",
+                f"{additional_metrics['Best Year']:.2%}",
+                f"{additional_metrics['Worst Year']:.2%}",
+                f"{additional_metrics['Sortino Ratio']:.2f}",
+                f"{additional_metrics['Benchmark Correlation']:.2f}"
             ],
             benchmark: [
                 f"${benchmark_metrics['Start Balance']:,.2f}",
@@ -235,7 +272,8 @@ def main():
                 f"{benchmark_metrics['Annualized Return']:.2%}",
                 f"{benchmark_metrics['Annualized Volatility']:.2%}",
                 f"{benchmark_metrics['Sharpe Ratio']:.2f}",
-                f"{benchmark_metrics['Maximum Drawdown']:.2%}"
+                f"{benchmark_metrics['Maximum Drawdown']:.2%}",
+                "N/A", "N/A", "N/A", "N/A"
             ]
         })
         st.table(summary_df)
@@ -246,11 +284,67 @@ def main():
             portfolio[['PortfolioValue']].rename(columns={'PortfolioValue': 'Portfolio'}),
             benchmark_df[['BenchmarkValue']].rename(columns={'BenchmarkValue': benchmark})
         ], axis=1)
-        fig = px.line(growth_df, title="Portfolio vs. Benchmark Growth")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            log_scale = st.checkbox("Logarithmic Scale", key="log_scale")
+        with col2:
+            inflation_adjust = st.checkbox("Inflation Adjusted", key="inflation_adjust")
+
+        if inflation_adjust:
+            inflation_factor = 1.02  # Placeholder for actual inflation adjustment logic
+            growth_df = growth_df / inflation_factor
+
+        fig = px.line(growth_df, title="Portfolio vs. Benchmark Growth", log_y=log_scale)
         st.plotly_chart(fig, use_container_width=True)
+
+        # Annual Returns Chart
+        st.subheader("Annual Returns")
+        annual_returns = portfolio['DailyReturn'].resample('Y').sum() * 100
+        benchmark_annual_returns = benchmark_df['DailyReturn'].resample('Y').sum() * 100
+        annual_returns_df = pd.DataFrame({
+            "Year": annual_returns.index.year,
+            "Portfolio": annual_returns.values,
+            benchmark: benchmark_annual_returns.values
+        })
+        fig_bar = px.bar(annual_returns_df, x="Year", y=["Portfolio", benchmark],
+                         barmode="group", title="Annual Returns")
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+        # Trailing Returns Table
+        st.subheader("Trailing Returns")
+        trailing_periods = {
+            "3 Month": 63, "Year To Date": portfolio.index[-1].timetuple().tm_yday,
+            "1 Year": 252, "3 Year": 756, "5 Year": 1260, "10 Year": 2520, "Full": len(portfolio)
+        }
+        trailing_returns = {}
+        for period_name, days in trailing_periods.items():
+            if days <= len(portfolio):
+                portfolio_annualized_return = (1 + portfolio['DailyReturn'].iloc[-days:].mean()) ** 252 - 1
+                portfolio_annualized_volatility = portfolio['DailyReturn'].iloc[-days:].std() * np.sqrt(252)
+
+                benchmark_annualized_return = (1 + benchmark_df['DailyReturn'].iloc[-days:].mean()) ** 252 - 1
+                benchmark_annualized_volatility = benchmark_df['DailyReturn'].iloc[-days:].std() * np.sqrt(252)
+
+                trailing_returns[period_name] = [
+                    portfolio['DailyReturn'].iloc[-days:].sum() * 100,
+                    benchmark_df['DailyReturn'].iloc[-days:].sum() * 100,
+                    portfolio_annualized_return * 100,
+                    portfolio_annualized_volatility * 100,
+                    benchmark_annualized_return * 100,
+                    benchmark_annualized_volatility * 100
+                ]
+
+        trailing_df = pd.DataFrame(trailing_returns, index=[
+            "Total Return (Portfolio)", "Total Return (Benchmark)",
+            "Annualized Return (Portfolio)", "Annualized Std Dev (Portfolio)",
+            "Annualized Return (Benchmark)", "Annualized Std Dev (Benchmark)"
+        ]).T
+        st.table(trailing_df)
 
 if __name__ == "__main__":
     main()
+
 ###############################################################################
 #                          PAGE 3: MULTI-EQUITY VaR
 ###############################################################################
