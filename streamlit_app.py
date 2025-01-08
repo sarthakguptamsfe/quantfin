@@ -342,6 +342,52 @@ def main():
         ]).T
         st.table(trailing_df)
 
+        # Portfolio Income Chart
+        st.subheader("Portfolio Income")
+        portfolio_income = (portfolio['DailyReturn'] * initial_capital).resample('Y').sum()
+        portfolio_income_df = pd.DataFrame({
+            "Year": portfolio_income.index.year,
+            "Portfolio Income": portfolio_income.values
+        })
+        fig_income = px.bar(portfolio_income_df, x="Year", y="Portfolio Income", title="Portfolio Income",
+                            labels={"Portfolio Income": "Portfolio Income ($)", "Year": "Year"},
+                            color_discrete_sequence=["blue"])
+        st.plotly_chart(fig_income, use_container_width=True)
+
+        # Holdings-Based Style Analysis
+        st.subheader("Holdings Based Style Analysis for Portfolio")
+        holdings_data = {
+            "Ticker": stocks,
+            "Name": ["Stock " + ticker for ticker in stocks],  # Placeholder for actual names
+            "Category": ["Large Cap" for _ in stocks],  # Placeholder categories
+            "Weight (%)": weights,
+            "Yield (TTM)": np.random.uniform(1, 3, len(stocks)),
+            "Expense Ratio": np.random.uniform(0.1, 0.5, len(stocks)),
+            "P/E": np.random.uniform(15, 30, len(stocks)),
+            "Return": np.random.uniform(5, 20, len(stocks)),
+            "Risk": np.random.uniform(10, 30, len(stocks))
+        }
+        holdings_df = pd.DataFrame(holdings_data)
+        st.table(holdings_df)
+
+        # Asset Allocation Pie Chart
+        asset_allocation = {
+            "Asset Class": ["US Stocks", "Intl Stocks", "Bonds", "Other"],
+            "Weight (%)": [50, 20, 20, 10]  # Example data
+        }
+        asset_allocation_df = pd.DataFrame(asset_allocation)
+        fig_asset_allocation = px.pie(asset_allocation_df, values="Weight (%)", names="Asset Class", title="Asset Allocation")
+        st.plotly_chart(fig_asset_allocation, use_container_width=True)
+
+        # Equity Market Capitalization Pie Chart
+        equity_cap = {
+            "Market Cap": ["Large Cap", "Mid Cap", "Small Cap"],
+            "Weight (%)": [70, 20, 10]  # Example data
+        }
+        equity_cap_df = pd.DataFrame(equity_cap)
+        fig_equity_cap = px.pie(equity_cap_df, values="Weight (%)", names="Market Cap", title="Equity Market Capitalization")
+        st.plotly_chart(fig_equity_cap, use_container_width=True)
+
 if __name__ == "__main__":
     main()
 
