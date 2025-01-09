@@ -533,30 +533,61 @@ def main():
             fig_active_return.update_layout(template="plotly_white")
             st.plotly_chart(fig_active_return, use_container_width=True)
 
-            # Generate Cumulative Active Return Contribution Chart
-            st.subheader("Cumulative Active Return Contribution")
-            cumulative_active_return = portfolio['DailyReturn'].cumsum() - benchmark_df['DailyReturn'].cumsum()
-            stock_contributions = {
-                stock: (portfolio[stock].pct_change().fillna(0) * (weights[i] / 100)).cumsum()
-                for i, stock in enumerate(stocks)
-            }
-            stock_contributions_df = pd.DataFrame(stock_contributions, index=cumulative_active_return.index)
+     # Generate Cumulative Active Return Contribution Chart
+    st.subheader("Cumulative Active Return Contribution")
 
-            # Plot cumulative contributions
-            fig_cumulative_return = px.bar(
-                stock_contributions_df,
-                x=stock_contributions_df.index,
-                y=stock_contributions_df.columns,
-                title="Cumulative Active Return Contribution",
-                labels={"value": "Cumulative Active Return (%)", "index": "Date"},
-                barmode="stack"
+    # Check if portfolio and benchmark data are valid
+    if portfolio is not None and benchmark_df is not None:
+        # Calculate cumulative active return
+        cumulative_active_return = portfolio['DailyReturn'].cumsum() - benchmark_df['DailyReturn'].cumsum()
+
+        # Initialize contributions dictionary
+        stock_contributions = {}
+
+        for i, stock in enumerate(stocks):
+            if stock in portfolio.columns:  # Ensure the stock exists in the portfolio
+                # Calculate individual stock contributions
+                stock_returns = portfolio[stock].pct_change().fillna(0)
+                stock_contributions[stock] = (stock_returns * (weights[i] / 100)).cumsum()
+            else:
+                # If stock is missing, add an empty series
+                stock_contributions[stock] = pd.Series(0, index=portfolio.index)
+
+        # Create DataFrame for stock contributions
+        stock_contributions_df = pd.DataFrame(stock_contributions, index=portfolio.index)
+
+        # Convert the index to string for proper visualization in Plotly
+        stock_contributions_df.index = stock_contributions_df.index.astype(str)
+
+        # Assign explicit colors to the stocks
+        color_map = px.colors.qualitative.Plotly  # Use Plotly's default color palette
+        colors = color_map[:len(stocks)]  # Limit colors to the number of stocks
+
+        # Create a bar chart with explicit colors
+        fig_cumulative_return = go.Figure()
+
+        for i, stock in enumerate(stock_contributions_df.columns):
+            fig_cumulative_return.add_trace(
+                go.Bar(
+                    x=stock_contributions_df.index,
+                    y=stock_contributions_df[stock],
+                    name=stock,
+                    marker=dict(color=colors[i])  # Assign a unique color to each stock
+                )
             )
-            fig_cumulative_return.update_layout(template="plotly_white")
-            st.plotly_chart(fig_cumulative_return, use_container_width=True)
+
+        fig_cumulative_return.update_layout(
+            barmode="stack",
+            title="Cumulative Active Return Contribution",
+            xaxis_title="Date",
+            yaxis_title="Cumulative Active Return (%)",
+            template="plotly_white",
+            showlegend=True
+        )
+
+        st.plotly_chart(fig_cumulative_return, use_container_width=True)
     else:
-            st.warning("Portfolio or benchmark data is not available for calculating active returns.")
-
-
+        st.warning("Portfolio or benchmark data is not available for calculating active returns.")
 
 if __name__ == "__main__":
     main()
