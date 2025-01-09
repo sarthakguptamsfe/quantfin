@@ -48,6 +48,97 @@ def fetch_stock_data(ticker, start_date, end_date):
     except Exception as e:
         return None, f"Error fetching data for {ticker}: {str(e)}"
 
+def fetch_stock_profile(ticker):
+    """
+    Fetch stock profile data (market cap, sector, industry) from FinancialModelingPrep.
+    """
+    url = f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={API_KEY}"
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            return None, f"HTTP Error {response.status_code}: Unable to fetch profile for {ticker}."
+        data = response.json()
+        if not data:
+            return None, f"No profile data found for {ticker}."
+        return data[0], None
+    except Exception as e:
+        return None, f"Error fetching profile for {ticker}: {str(e)}"
+
+def classify_market_cap(market_cap):
+    """
+    Classify stocks based on market capitalization.
+    """
+    if market_cap < 2e9:
+        return "Small Cap"
+    elif 2e9 <= market_cap <= 10e9:
+        return "Mid Cap"
+    else:
+        return "Large Cap"
+
+def get_portfolio_analysis(stocks, weights):
+    """
+    Fetch real market data for portfolio analysis and create asset allocation data.
+    """
+    market_cap_data = {"Category": [], "Weight (%)": []}
+    industry_data = {"Industry": [], "Weight (%)": []}
+
+    for stock, weight in zip(stocks, weights):
+        profile, err = fetch_stock_profile(stock)
+        if err:
+            st.warning(f"Skipping {stock}: {err}")
+            continue
+        market_cap = profile.get("mktCap", 0)
+        industry = profile.get("industry", "Unknown")
+        category = classify_market_cap(market_cap)
+
+        # Update market cap allocation
+        if category in market_cap_data["Category"]:
+            idx = market_cap_data["Category"].index(category)
+            market_cap_data["Weight (%)"][idx] += weight
+        else:
+            market_cap_data["Category"].append(category)
+            market_cap_data["Weight (%)"].append(weight)
+
+        # Update industry allocation
+        if industry in industry_data["Industry"]:
+            idx = industry_data["Industry"].index(industry)
+            industry_data["Weight (%)"][idx] += weight
+        else:
+            industry_data["Industry"].append(industry)
+            industry_data["Weight (%)"].append(weight)
+
+    return market_cap_data, industry_data
+
+def fetch_sector_data(stocks, weights):
+    """
+    Fetch sector data for each stock and aggregate weights by sector.
+    """
+    sector_data = {}
+    
+    for ticker, weight in zip(stocks, weights):
+        if not ticker:  # Skip empty tickers
+            continue
+        
+        # Fetch profile data for the stock
+        url = f"https://financialmodelingprep.com/api/v3/profile/{ticker}?apikey={API_KEY}"
+        try:
+            response = requests.get(url).json()
+            if response and isinstance(response, list) and "sector" in response[0]:
+                sector = response[0]["sector"]
+                sector_data[sector] = sector_data.get(sector, 0) + weight
+        except Exception as e:
+            st.warning(f"Could not fetch sector data for {ticker}: {e}")
+
+
+    # Convert to DataFrame for visualization
+    sector_df = pd.DataFrame({
+        "Sector": sector_data.keys(),
+        "Weight (%)": sector_data.values()
+    }).sort_values(by="Weight (%)", ascending=False)
+
+    return sector_df
+
+
 ###############################################################################
 #                          PAGE 1: HOME
 ###############################################################################
@@ -164,6 +255,7 @@ def calculate_additional_metrics(df):
         'Benchmark Correlation': benchmark_correlation
          }
 
+
 ###############################################################################
 #                           ENHANCED MAIN FUNCTION
 ###############################################################################
@@ -225,6 +317,9 @@ def main():
         st.session_state['portfolio'] = portfolio
         st.session_state['benchmark_df'] = benchmark_df
 
+        # Fetch Market Cap and Industry Data
+        market_cap_data, industry_data = get_portfolio_analysis(stocks, weights)
+
     # Retrieve data from session state
     if 'portfolio' in st.session_state and 'benchmark_df' in st.session_state:
         portfolio = st.session_state['portfolio']
@@ -244,6 +339,7 @@ def main():
         st.table(allocation_df)
         fig_pie = px.pie(allocation_df, values="Weight (%)", names="Ticker", title="Portfolio Allocation")
         st.plotly_chart(fig_pie, use_container_width=True)
+
 
         # Display Performance Summary
         st.subheader("Performance Summary")
@@ -354,39 +450,59 @@ def main():
                             color_discrete_sequence=["blue"])
         st.plotly_chart(fig_income, use_container_width=True)
 
-        # Holdings-Based Style Analysis
-        st.subheader("Holdings Based Style Analysis for Portfolio")
-        holdings_data = {
-            "Ticker": stocks,
-            "Name": ["Stock " + ticker for ticker in stocks],  # Placeholder for actual names
-            "Category": ["Large Cap" for _ in stocks],  # Placeholder categories
-            "Weight (%)": weights,
-            "Yield (TTM)": np.random.uniform(1, 3, len(stocks)),
-            "Expense Ratio": np.random.uniform(0.1, 0.5, len(stocks)),
-            "P/E": np.random.uniform(15, 30, len(stocks)),
-            "Return": np.random.uniform(5, 20, len(stocks)),
-            "Risk": np.random.uniform(10, 30, len(stocks))
-        }
-        holdings_df = pd.DataFrame(holdings_data)
-        st.table(holdings_df)
+                # Market Capitalization Pie Chart
+        if market_cap_data["Category"]:
+            market_cap_df = pd.DataFrame(market_cap_data)
+            fig_market_cap = px.pie(market_cap_df, values="Weight (%)", names="Category", title="Market Capitalization Allocation")
+            st.plotly_chart(fig_market_cap, use_container_width=True)
+        else:
+            st.warning("No market capitalization data available.")
 
-        # Asset Allocation Pie Chart
-        asset_allocation = {
-            "Asset Class": ["US Stocks", "Intl Stocks", "Bonds", "Other"],
-            "Weight (%)": [50, 20, 20, 10]  # Example data
-        }
-        asset_allocation_df = pd.DataFrame(asset_allocation)
-        fig_asset_allocation = px.pie(asset_allocation_df, values="Weight (%)", names="Asset Class", title="Asset Allocation")
-        st.plotly_chart(fig_asset_allocation, use_container_width=True)
+        # Industry Allocation Pie Chart
+        if industry_data["Industry"]:
+            industry_df = pd.DataFrame(industry_data)
+            fig_industry = px.pie(industry_df, values="Weight (%)", names="Industry", title="Industry Allocation")
+            st.plotly_chart(fig_industry, use_container_width=True)
+        else:
+            st.warning("No industry data available.")
 
-        # Equity Market Capitalization Pie Chart
-        equity_cap = {
-            "Market Cap": ["Large Cap", "Mid Cap", "Small Cap"],
-            "Weight (%)": [70, 20, 10]  # Example data
-        }
-        equity_cap_df = pd.DataFrame(equity_cap)
-        fig_equity_cap = px.pie(equity_cap_df, values="Weight (%)", names="Market Cap", title="Equity Market Capitalization")
-        st.plotly_chart(fig_equity_cap, use_container_width=True)
+
+    # Fetch Sector Data
+    sector_df = fetch_sector_data(stocks, weights)
+
+# Define all possible sectors
+ALL_SECTORS = [
+    "Basic Materials", "Consumer Discretionary", "Consumer Staples", "Energy", 
+    "Financial Services", "Healthcare", "Industrials", "Real Estate", 
+    "Technology", "Utilities", "Communication Services"
+]
+
+# Generate Sector Allocation Chart
+if not sector_df.empty:
+    # Ensure all sectors are represented
+    all_sectors_df = pd.DataFrame({"Sector": ALL_SECTORS})
+    sector_df = pd.merge(all_sectors_df, sector_df, on="Sector", how="left")
+    sector_df["Weight (%)"] = sector_df["Weight (%)"].fillna(0)  # Fill missing sectors with 0%
+
+    # Create the bar chart
+    st.subheader("Equity Sectors")
+    fig_sectors = px.bar(
+        sector_df,
+        x="Weight (%)",
+        y="Sector",
+        orientation="h",
+        title="Sector Allocation",
+        color_discrete_sequence=["blue"]
+    )
+    fig_sectors.update_layout(
+        xaxis_title="Percentage (%)",
+        yaxis_title="Sector",
+        template="plotly_white"
+    )
+    st.plotly_chart(fig_sectors, use_container_width=True)
+else:
+    st.warning("No sector data available for the portfolio.")
+
 
 if __name__ == "__main__":
     main()
