@@ -467,41 +467,42 @@ def main():
             st.warning("No industry data available.")
 
 
-    # Fetch Sector Data
-    sector_df = fetch_sector_data(stocks, weights)
-
-# Define all possible sectors
-ALL_SECTORS = [
+    # Define all possible sectors
+    ALL_SECTORS = [
     "Basic Materials", "Consumer Discretionary", "Consumer Staples", "Energy", 
     "Financial Services", "Healthcare", "Industrials", "Real Estate", 
     "Technology", "Utilities", "Communication Services"
 ]
 
-# Generate Sector Allocation Chart
-if not sector_df.empty:
-    # Ensure all sectors are represented
-    all_sectors_df = pd.DataFrame({"Sector": ALL_SECTORS})
-    sector_df = pd.merge(all_sectors_df, sector_df, on="Sector", how="left")
-    sector_df["Weight (%)"] = sector_df["Weight (%)"].fillna(0)  # Fill missing sectors with 0%
 
-    # Create the bar chart
-    st.subheader("Equity Sectors")
-    fig_sectors = px.bar(
-        sector_df,
-        x="Weight (%)",
-        y="Sector",
-        orientation="h",
-        title="Sector Allocation",
-        color_discrete_sequence=["blue"]
-    )
-    fig_sectors.update_layout(
-        xaxis_title="Percentage (%)",
-        yaxis_title="Sector",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_sectors, use_container_width=True)
-else:
-    st.warning("No sector data available for the portfolio.")
+    # Fetch Sector Data
+    sector_df = fetch_sector_data(stocks, weights)
+
+    # Generate Sector Allocation Chart
+    if not sector_df.empty:
+        # Ensure all sectors are represented
+        all_sectors_df = pd.DataFrame({"Sector": ALL_SECTORS})
+        sector_df = pd.merge(all_sectors_df, sector_df, on="Sector", how="left")
+        sector_df["Weight (%)"] = sector_df["Weight (%)"].fillna(0)  # Fill missing sectors with 0%
+
+        # Create the bar chart
+        st.subheader("Equity Sectors")
+        fig_sectors = px.bar(
+            sector_df,
+            x="Weight (%)",
+            y="Sector",
+            orientation="h",
+            title="Sector Allocation",
+            color_discrete_sequence=["blue"]
+        )
+        fig_sectors.update_layout(
+            xaxis_title="Percentage (%)",
+            yaxis_title="Sector",
+            template="plotly_white"
+        )
+        st.plotly_chart(fig_sectors, use_container_width=True)
+    else:
+        st.warning("No sector data available for the portfolio.")
 
 
 if __name__ == "__main__":
